@@ -1,4 +1,4 @@
 bs4
-urlparse
+lxml
 hackhttp
 requests
