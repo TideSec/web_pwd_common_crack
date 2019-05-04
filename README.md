@@ -286,12 +286,12 @@ logon/logon.jsp
 
 # 关注我们
 
-Tide安全团队正式成立于2019年1月，是新潮信息旗下以互联网攻防技术研究为目标的安全团队，目前聚集了十多位专业的安全攻防技术研究人员，专注于网络攻防、Web安全、移动终端、安全开发、IoT/物联网/工控安全等方向。
+Tide安全团队正式成立于2019年1月，是以互联网攻防技术研究为目标的安全团队，目前聚集了十多位专业的安全攻防技术研究人员，专注于网络攻防、Web安全、移动终端、安全开发、IoT/物联网/工控安全等方向。
 
 想了解更多Tide安全团队，请关注团队官网: http://www.TideSec.net 或关注公众号：
 
-![screenshot](ewm.png)
+<div align=center><img src=ewm.png width=30% ></div>
 
+**和我联系：**
 
-
-
+<div align=center><img src=zjwf.png width=30% ></div>
