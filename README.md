@@ -291,7 +291,3 @@ Tide安全团队正式成立于2019年1月，是以互联网攻防技术研究�
 想了解更多Tide安全团队，请关注团队官网: http://www.TideSec.net 或关注公众号：
 
 <div align=center><img src=ewm.png width=30% ></div>
-
-**和我联系：**
-
-<div align=center><img src=zjwf.png width=30% ></div>
